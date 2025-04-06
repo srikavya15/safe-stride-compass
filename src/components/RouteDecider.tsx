@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Check, AlertTriangle, X, MapPin, ArrowRight } from 'lucide-react';
-import ApiKeyInput from './ApiKeyInput';
 import { calculateSafeRoute, getCityCoordinates } from '@/lib/crimeApi';
 import 'leaflet/dist/leaflet.css';
 
@@ -23,7 +22,6 @@ interface RouteOption {
 }
 
 const RouteDecider: React.FC = () => {
-  const [crimeApiKey, setCrimeApiKey] = useState<string | null>(null);
   const [startLocation, setStartLocation] = useState<string>('');
   const [endLocation, setEndLocation] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -69,10 +67,10 @@ const RouteDecider: React.FC = () => {
       const startLocationObj = { ...startCoords, address: startLocation };
       const endLocationObj = { ...endCoords, address: endLocation };
       
-      // Calculate safe route
+      // Calculate safe route using dummy data
       const routeResult = await calculateSafeRoute(
-        crimeApiKey || 'demo-key',
-        startLocationObj,
+        'demo-key',
+        startLocationObj, 
         endLocationObj
       );
       
@@ -260,160 +258,187 @@ const RouteDecider: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {!crimeApiKey ? (
-          <ApiKeyInput onApiKeySubmit={setCrimeApiKey} type="crime" />
-        ) : (
-          <>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Start Location</label>
+              <div className="flex">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground">
+                  <MapPin className="h-4 w-4" />
+                </span>
+                <Input
+                  placeholder="Enter city name (e.g., Mumbai, New York)"
+                  value={startLocation}
+                  onChange={(e) => setStartLocation(e.target.value)}
+                  disabled={loading}
+                  className="rounded-l-none"
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">End Location</label>
+              <div className="flex">
+                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground">
+                  <MapPin className="h-4 w-4" />
+                </span>
+                <Input
+                  placeholder="Enter city name (e.g., Delhi, London)"
+                  value={endLocation}
+                  onChange={(e) => setEndLocation(e.target.value)}
+                  disabled={loading}
+                  className="rounded-l-none"
+                />
+              </div>
+            </div>
+          </div>
+          
+          <Button 
+            onClick={findRoute} 
+            disabled={loading || !startLocation || !endLocation}
+            className="w-full"
+          >
+            {loading ? 'Finding Safe Route...' : 'Find Safe Route'}
+          </Button>
+          
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
+          {loading && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Start Location</label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                    </span>
-                    <Input
-                      placeholder="Enter city name (e.g., Mumbai, New York)"
-                      value={startLocation}
-                      onChange={(e) => setStartLocation(e.target.value)}
-                      disabled={loading}
-                      className="rounded-l-none"
-                    />
+              <Skeleton className="h-[300px] w-full rounded-md" />
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-3/4" />
+                <Skeleton className="h-6 w-1/2" />
+              </div>
+            </div>
+          )}
+          
+          {!loading && !recommendedRoute && (
+            <div className="p-4 border rounded-md mb-4 bg-muted/30">
+              <h3 className="text-lg font-medium mb-2">Sample City Pairs</h3>
+              <p className="text-muted-foreground mb-3">
+                Try these example routes:
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {[
+                  { start: 'Mumbai', end: 'Delhi' },
+                  { start: 'Bangalore', end: 'Chennai' },
+                  { start: 'New York', end: 'Chicago' },
+                  { start: 'London', end: 'Paris' }
+                ].map((pair) => (
+                  <div 
+                    key={`${pair.start}-${pair.end}`} 
+                    className="flex items-center space-x-2 text-sm px-3 py-2 bg-primary/10 rounded-md cursor-pointer hover:bg-primary/20"
+                    onClick={() => {
+                      setStartLocation(pair.start);
+                      setEndLocation(pair.end);
+                      setTimeout(() => {
+                        findRoute();
+                      }, 100);
+                    }}
+                  >
+                    <span>{pair.start}</span>
+                    <ArrowRight className="h-4 w-4" />
+                    <span>{pair.end}</span>
                   </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">End Location</label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                    </span>
-                    <Input
-                      placeholder="Enter city name (e.g., Delhi, London)"
-                      value={endLocation}
-                      onChange={(e) => setEndLocation(e.target.value)}
-                      disabled={loading}
-                      className="rounded-l-none"
-                    />
-                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {!loading && recommendedRoute && (
+            <div className="space-y-6 mt-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">Routes</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Card 
+                    className={`cursor-pointer ${selectedRoute === recommendedRoute ? 'ring-2 ring-primary' : ''}`}
+                    onClick={() => selectRoute(recommendedRoute)}
+                  >
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-base flex justify-between items-center">
+                        <span>Recommended Route</span>
+                        <Badge className={getSafetyBadge(recommendedRoute.safetyScore).color}>
+                          <span className="flex items-center">
+                            {getSafetyBadge(recommendedRoute.safetyScore).icon}
+                            {getSafetyBadge(recommendedRoute.safetyScore).text}
+                          </span>
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                      <div className="text-sm text-muted-foreground">
+                        <div className="flex items-center justify-between">
+                          <span>Safety Score: </span>
+                          <span className="font-semibold">{recommendedRoute.safetyScore}/100</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  {alternativeRoutes.map((route, index) => (
+                    <Card 
+                      key={index}
+                      className={`cursor-pointer ${selectedRoute === route ? 'ring-2 ring-primary' : ''}`}
+                      onClick={() => selectRoute(route)}
+                    >
+                      <CardHeader className="py-3 px-4">
+                        <CardTitle className="text-base flex justify-between items-center">
+                          <span>Alternative {index + 1}</span>
+                          <Badge className={getSafetyBadge(route.safetyScore).color}>
+                            <span className="flex items-center">
+                              {getSafetyBadge(route.safetyScore).icon}
+                              {getSafetyBadge(route.safetyScore).text}
+                            </span>
+                          </Badge>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4 pt-0">
+                        <div className="text-sm text-muted-foreground">
+                          <div className="flex items-center justify-between">
+                            <span>Safety Score: </span>
+                            <span className="font-semibold">{route.safetyScore}/100</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </div>
               
-              <Button 
-                onClick={findRoute} 
-                disabled={loading || !startLocation || !endLocation}
-                className="w-full"
-              >
-                {loading ? 'Finding Safe Route...' : 'Find Safe Route'}
-              </Button>
+              <div ref={mapContainer} style={{ height: '400px' }} className="rounded-md border" />
               
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-              
-              {loading && (
-                <div className="space-y-4">
-                  <Skeleton className="h-[300px] w-full rounded-md" />
-                  <div className="space-y-2">
-                    <Skeleton className="h-8 w-3/4" />
-                    <Skeleton className="h-6 w-1/2" />
+              <div className="bg-muted p-4 rounded-md">
+                <h3 className="text-lg font-semibold mb-2">Route Details</h3>
+                <div className="space-y-2">
+                  <div className="flex items-start md:items-center">
+                    <div className="min-w-[100px] font-medium">Start:</div>
+                    <div>{startLocation}</div>
                   </div>
-                </div>
-              )}
-              
-              {!loading && recommendedRoute && (
-                <div className="space-y-6 mt-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Routes</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <Card 
-                        className={`cursor-pointer ${selectedRoute === recommendedRoute ? 'ring-2 ring-primary' : ''}`}
-                        onClick={() => selectRoute(recommendedRoute)}
-                      >
-                        <CardHeader className="py-3 px-4">
-                          <CardTitle className="text-base flex justify-between items-center">
-                            <span>Recommended Route</span>
-                            <Badge className={getSafetyBadge(recommendedRoute.safetyScore).color}>
-                              <span className="flex items-center">
-                                {getSafetyBadge(recommendedRoute.safetyScore).icon}
-                                {getSafetyBadge(recommendedRoute.safetyScore).text}
-                              </span>
-                            </Badge>
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <div className="text-sm text-muted-foreground">
-                            <div className="flex items-center justify-between">
-                              <span>Safety Score: </span>
-                              <span className="font-semibold">{recommendedRoute.safetyScore}/100</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                      
-                      {alternativeRoutes.map((route, index) => (
-                        <Card 
-                          key={index}
-                          className={`cursor-pointer ${selectedRoute === route ? 'ring-2 ring-primary' : ''}`}
-                          onClick={() => selectRoute(route)}
-                        >
-                          <CardHeader className="py-3 px-4">
-                            <CardTitle className="text-base flex justify-between items-center">
-                              <span>Alternative {index + 1}</span>
-                              <Badge className={getSafetyBadge(route.safetyScore).color}>
-                                <span className="flex items-center">
-                                  {getSafetyBadge(route.safetyScore).icon}
-                                  {getSafetyBadge(route.safetyScore).text}
-                                </span>
-                              </Badge>
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-4 pt-0">
-                            <div className="text-sm text-muted-foreground">
-                              <div className="flex items-center justify-between">
-                                <span>Safety Score: </span>
-                                <span className="font-semibold">{route.safetyScore}/100</span>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
+                  <div className="flex items-start md:items-center">
+                    <div className="min-w-[100px] font-medium">End:</div>
+                    <div>{endLocation}</div>
                   </div>
-                  
-                  <div ref={mapContainer} style={{ height: '400px' }} className="rounded-md border" />
-                  
-                  <div className="bg-muted p-4 rounded-md">
-                    <h3 className="text-lg font-semibold mb-2">Route Details</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-start md:items-center">
-                        <div className="min-w-[100px] font-medium">Start:</div>
-                        <div>{startLocation}</div>
-                      </div>
-                      <div className="flex items-start md:items-center">
-                        <div className="min-w-[100px] font-medium">End:</div>
-                        <div>{endLocation}</div>
-                      </div>
-                      <div className="flex items-start md:items-center">
-                        <div className="min-w-[100px] font-medium">Safety Rating:</div>
-                        <div className="flex items-center">
-                          <Badge className={getSafetyBadge(selectedRoute?.safetyScore || 0).color}>
-                            <span className="flex items-center">
-                              {getSafetyBadge(selectedRoute?.safetyScore || 0).icon}
-                              {getSafetyBadge(selectedRoute?.safetyScore || 0).text}
-                            </span>
-                          </Badge>
-                        </div>
-                      </div>
+                  <div className="flex items-start md:items-center">
+                    <div className="min-w-[100px] font-medium">Safety Rating:</div>
+                    <div className="flex items-center">
+                      <Badge className={getSafetyBadge(selectedRoute?.safetyScore || 0).color}>
+                        <span className="flex items-center">
+                          {getSafetyBadge(selectedRoute?.safetyScore || 0).icon}
+                          {getSafetyBadge(selectedRoute?.safetyScore || 0).text}
+                        </span>
+                      </Badge>
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </CardContent>
     </Card>
   );
