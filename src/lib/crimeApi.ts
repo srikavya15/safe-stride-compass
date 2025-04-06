@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 
 // Types
@@ -20,7 +21,7 @@ interface Location {
 }
 
 // Expanded local crime data including Indian and international cities
-const LOCAL_CRIMES: CrimeData[] = [
+export const LOCAL_CRIMES: CrimeData[] = [
   // New York, USA
   { id: 1, lat: 40.7128, lng: -74.006, type: 'Theft', severity: 'medium', date: '2025-04-02', description: 'Personal items stolen from vehicle', address: '123 Broadway', city: 'New York', country: 'USA' },
   { id: 2, lat: 40.7138, lng: -74.008, type: 'Assault', severity: 'high', date: '2025-04-01', description: 'Physical altercation between individuals', address: '456 5th Ave', city: 'New York', country: 'USA' },
