@@ -8,7 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Check, AlertTriangle, X, MapPin, ArrowRight } from 'lucide-react';
 import ApiKeyInput from './ApiKeyInput';
-import { calculateSafeRoute } from '@/lib/crimeApi';
+import { calculateSafeRoute, getCityCoordinates } from '@/lib/crimeApi';
+import 'leaflet/dist/leaflet.css';
 
 interface Location {
   lat: number;
@@ -22,7 +23,6 @@ interface RouteOption {
 }
 
 const RouteDecider: React.FC = () => {
-  const [mapboxApiKey, setMapboxApiKey] = useState<string | null>(null);
   const [crimeApiKey, setCrimeApiKey] = useState<string | null>(null);
   const [startLocation, setStartLocation] = useState<string>('');
   const [endLocation, setEndLocation] = useState<string>('');
@@ -34,38 +34,9 @@ const RouteDecider: React.FC = () => {
   
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
+  const routeLayers = useRef<any[]>([]);
 
-  // Function to geocode addresses to coordinates
-  const geocodeAddress = async (address: string): Promise<Location | null> => {
-    if (!mapboxApiKey) return null;
-    
-    try {
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${mapboxApiKey}`
-      );
-      
-      if (!response.ok) {
-        throw new Error('Geocoding failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data.features && data.features.length > 0) {
-        const [lng, lat] = data.features[0].center;
-        return { 
-          lat, 
-          lng, 
-          address: data.features[0].place_name 
-        };
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error geocoding address:', error);
-      return null;
-    }
-  };
-
+  // Function to find route
   const findRoute = async () => {
     if (!startLocation || !endLocation) {
       setError('Please enter both start and end locations');
@@ -79,27 +50,30 @@ const RouteDecider: React.FC = () => {
     setSelectedRoute(null);
     
     try {
-      // In a real app, we would geocode the addresses
-      // For demo, we'll simulate it
+      // Use city coordinates lookup instead of geocoding
+      const startCoords = getCityCoordinates(startLocation);
+      const endCoords = getCityCoordinates(endLocation);
       
-      // Mock geocoding for demonstration
-      const mockStart = await new Promise<Location>(resolve => {
-        setTimeout(() => {
-          resolve({ lat: 40.7128, lng: -74.0060, address: startLocation });
-        }, 500);
-      });
+      if (!startCoords) {
+        setError(`Could not find location "${startLocation}". Please try another city.`);
+        setLoading(false);
+        return;
+      }
       
-      const mockEnd = await new Promise<Location>(resolve => {
-        setTimeout(() => {
-          resolve({ lat: 40.7580, lng: -73.9855, address: endLocation });
-        }, 500);
-      });
+      if (!endCoords) {
+        setError(`Could not find location "${endLocation}". Please try another city.`);
+        setLoading(false);
+        return;
+      }
+      
+      const startLocationObj = { ...startCoords, address: startLocation };
+      const endLocationObj = { ...endCoords, address: endLocation };
       
       // Calculate safe route
       const routeResult = await calculateSafeRoute(
         crimeApiKey || 'demo-key',
-        mockStart,
-        mockEnd
+        startLocationObj,
+        endLocationObj
       );
       
       // Set the recommended route
@@ -116,10 +90,8 @@ const RouteDecider: React.FC = () => {
         setAlternativeRoutes(routeResult.alternativeRoutes);
       }
       
-      // Initialize map if we have Mapbox API key
-      if (mapboxApiKey && mapContainer.current) {
-        initializeMap(mockStart, mockEnd, routeResult);
-      }
+      // Initialize map
+      initializeMap(startLocationObj, endLocationObj, routeResult);
     } catch (error) {
       console.error('Error finding route:', error);
       setError('Failed to calculate safe route. Please try again.');
@@ -128,108 +100,121 @@ const RouteDecider: React.FC = () => {
     }
   };
 
-  const initializeMap = (start: Location, end: Location, routeResult: any) => {
-    if (!mapboxApiKey || !mapContainer.current) return;
+  const initializeMap = async (start: Location, end: Location, routeResult: any) => {
+    if (!mapContainer.current) return;
     
-    // Load Mapbox script dynamically
-    const script = document.createElement('script');
-    script.src = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js';
-    script.async = true;
-    
-    script.onload = () => {
-      const mapboxgl = (window as any).mapboxgl;
+    try {
+      // Dynamically import Leaflet to avoid SSR issues
+      const L = await import('leaflet');
       
-      if (mapboxgl && !map.current) {
-        mapboxgl.accessToken = mapboxApiKey;
-        
-        // Calculate the center point between start and end
-        const centerLng = (start.lng + end.lng) / 2;
-        const centerLat = (start.lat + end.lat) / 2;
-        
-        map.current = new mapboxgl.Map({
-          container: mapContainer.current!,
-          style: 'mapbox://styles/mapbox/streets-v12',
-          center: [centerLng, centerLat],
-          zoom: 12
-        });
-        
-        map.current.on('load', () => {
-          // Add markers for start and end points
-          new mapboxgl.Marker({ color: '#10B981' })
-            .setLngLat([start.lng, start.lat])
-            .addTo(map.current);
-            
-          new mapboxgl.Marker({ color: '#EF4444' })
-            .setLngLat([end.lng, end.lat])
-            .addTo(map.current);
-          
-          // Add the recommended route
-          const coords = routeResult.route.map((point: Location) => [point.lng, point.lat]);
-          
-          map.current.addSource('route', {
-            type: 'geojson',
-            data: {
-              type: 'Feature',
-              properties: {},
-              geometry: {
-                type: 'LineString',
-                coordinates: coords
-              }
-            }
-          });
-          
-          map.current.addLayer({
-            id: 'route',
-            type: 'line',
-            source: 'route',
-            layout: {
-              'line-join': 'round',
-              'line-cap': 'round'
-            },
-            paint: {
-              'line-color': '#3B82F6',
-              'line-width': 8,
-              'line-opacity': 0.8
-            }
-          });
-          
-          // Fit map to show the entire route
-          const bounds = new mapboxgl.LngLatBounds();
-          coords.forEach((coord: [number, number]) => bounds.extend(coord));
-          map.current.fitBounds(bounds, { padding: 50 });
-        });
-        
-        // Add navigation controls
-        map.current.addControl(new mapboxgl.NavigationControl());
+      // Clear previous map instance if it exists
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+        routeLayers.current = [];
       }
-    };
-    
-    document.head.appendChild(script);
-    
-    // Add stylesheet
-    const link = document.createElement('link');
-    link.href = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
+      
+      // Calculate the center point between start and end
+      const centerLat = (start.lat + end.lat) / 2;
+      const centerLng = (start.lng + end.lng) / 2;
+      
+      // Initialize the map
+      map.current = L.map(mapContainer.current).setView([centerLat, centerLng], 10);
+      
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map.current);
+      
+      // Add markers for start and end points
+      const startIcon = L.divIcon({
+        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-safe text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 24]
+      });
+      
+      const endIcon = L.divIcon({
+        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-danger text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 24]
+      });
+      
+      L.marker([start.lat, start.lng], { icon: startIcon })
+        .bindPopup(`<b>Start:</b> ${start.address}`)
+        .addTo(map.current);
+      
+      L.marker([end.lat, end.lng], { icon: endIcon })
+        .bindPopup(`<b>Destination:</b> ${end.address}`)
+        .addTo(map.current);
+      
+      // Add the recommended route line
+      const routeLine = L.polyline(
+        routeResult.route.map((point: Location) => [point.lat, point.lng]),
+        { 
+          color: '#3B82F6', 
+          weight: 5, 
+          opacity: 0.8,
+          className: 'recommended-route' 
+        }
+      ).addTo(map.current);
+      
+      routeLayers.current.push({
+        id: 'recommended',
+        layer: routeLine
+      });
+      
+      // Create bounds that include both points and the route
+      const bounds = L.latLngBounds(
+        routeResult.route.map((point: Location) => [point.lat, point.lng])
+      );
+      
+      // Fit the map to the bounds with some padding
+      map.current.fitBounds(bounds, { padding: [50, 50] });
+      
+      // Add zoom control
+      L.control.zoom({ position: 'topright' }).addTo(map.current);
+      
+    } catch (error) {
+      console.error('Error initializing map:', error);
+      setError('Failed to display the map. Please try again.');
+    }
   };
 
-  const selectRoute = (route: RouteOption) => {
+  const selectRoute = async (route: RouteOption) => {
+    if (!map.current) return;
+    
     setSelectedRoute(route);
     
-    // Update the map to show the selected route
-    if (map.current && route.route) {
-      const coords = route.route.map(point => [point.lng, point.lat]);
+    try {
+      const L = await import('leaflet');
       
-      if (map.current.getSource('route')) {
-        map.current.getSource('route').setData({
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'LineString',
-            coordinates: coords
-          }
-        });
-      }
+      // Remove previous route layers except markers
+      routeLayers.current.forEach(item => {
+        if (map.current) {
+          map.current.removeLayer(item.layer);
+        }
+      });
+      routeLayers.current = [];
+      
+      // Add the new selected route
+      const routeColor = route === recommendedRoute ? '#3B82F6' : '#f59e0b';
+      const routeLine = L.polyline(
+        route.route.map(point => [point.lat, point.lng]),
+        { 
+          color: routeColor, 
+          weight: 5, 
+          opacity: 0.8 
+        }
+      ).addTo(map.current);
+      
+      routeLayers.current.push({
+        id: 'selected-route',
+        layer: routeLine
+      });
+    } catch (error) {
+      console.error('Error updating route on map:', error);
     }
   };
   
@@ -275,9 +260,7 @@ const RouteDecider: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {!mapboxApiKey ? (
-          <ApiKeyInput onApiKeySubmit={setMapboxApiKey} type="mapbox" />
-        ) : !crimeApiKey ? (
+        {!crimeApiKey ? (
           <ApiKeyInput onApiKeySubmit={setCrimeApiKey} type="crime" />
         ) : (
           <>
@@ -290,7 +273,7 @@ const RouteDecider: React.FC = () => {
                       <MapPin className="h-4 w-4" />
                     </span>
                     <Input
-                      placeholder="Enter starting address"
+                      placeholder="Enter city name (e.g., Mumbai, New York)"
                       value={startLocation}
                       onChange={(e) => setStartLocation(e.target.value)}
                       disabled={loading}
@@ -306,7 +289,7 @@ const RouteDecider: React.FC = () => {
                       <MapPin className="h-4 w-4" />
                     </span>
                     <Input
-                      placeholder="Enter destination address"
+                      placeholder="Enter city name (e.g., Delhi, London)"
                       value={endLocation}
                       onChange={(e) => setEndLocation(e.target.value)}
                       disabled={loading}

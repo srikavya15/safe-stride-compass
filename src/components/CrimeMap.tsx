@@ -4,23 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
-
-// Mock data for development
-const CRIME_DATA = [
-  { id: 1, lat: 40.7128, lng: -74.006, type: 'Theft', severity: 'medium' },
-  { id: 2, lat: 40.7138, lng: -74.008, type: 'Assault', severity: 'high' },
-  { id: 3, lat: 40.7118, lng: -74.004, type: 'Robbery', severity: 'high' },
-  { id: 4, lat: 40.7148, lng: -74.003, type: 'Vandalism', severity: 'low' },
-  { id: 5, lat: 40.7158, lng: -74.009, type: 'Theft', severity: 'medium' },
-  // Additional data points to create a better heat map
-  { id: 6, lat: 40.7168, lng: -74.007, type: 'Harassment', severity: 'low' },
-  { id: 7, lat: 40.7178, lng: -74.005, type: 'Burglary', severity: 'high' },
-  { id: 8, lat: 40.7115, lng: -74.0065, type: 'Theft', severity: 'medium' },
-  { id: 9, lat: 40.7135, lng: -74.0075, type: 'Assault', severity: 'high' },
-  { id: 10, lat: 40.7125, lng: -74.0025, type: 'Robbery', severity: 'high' },
-  { id: 11, lat: 40.7145, lng: -74.0035, type: 'Vandalism', severity: 'low' },
-  { id: 12, lat: 40.7155, lng: -74.0095, type: 'Theft', severity: 'medium' },
-];
+import { CrimeData, getCrimeData } from '@/lib/crimeApi';
 
 interface CrimeMapProps {
   location?: { lat: number; lng: number } | null;
@@ -32,12 +16,30 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
   const heatLayer = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [crimeData, setCrimeData] = useState<CrimeData[]>([]);
   
-  // Default to New York City if no location provided
-  const defaultLocation = location || { lat: 40.7128, lng: -74.006 };
+  // Default to Mumbai, India if no location provided
+  const defaultLocation = location || { lat: 19.0760, lng: 72.8777 };
 
   useEffect(() => {
     if (!mapContainer.current) return;
+    
+    const fetchCrimeData = async () => {
+      try {
+        // Get crime data for the location
+        const data = await getCrimeData('demo-key', defaultLocation);
+        setCrimeData(data);
+      } catch (error) {
+        console.error('Error fetching crime data:', error);
+        setError('Failed to load crime data.');
+      }
+    };
+    
+    fetchCrimeData();
+  }, [defaultLocation.lat, defaultLocation.lng]);
+
+  useEffect(() => {
+    if (!mapContainer.current || crimeData.length === 0) return;
     
     const initializeMap = async () => {
       try {
@@ -62,7 +64,7 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
           L.control.zoom({ position: 'topright' }).addTo(map.current);
           
           // Create markers for each crime
-          CRIME_DATA.forEach(crime => {
+          crimeData.forEach(crime => {
             const severityColors = {
               low: '#10b981', // green
               medium: '#f59e0b', // amber
@@ -84,21 +86,20 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
             marker.bindPopup(`
               <strong>${crime.type}</strong><br>
               Severity: ${crime.severity}<br>
+              ${crime.date ? `Date: ${crime.date}<br>` : ''}
+              ${crime.address ? `Location: ${crime.address}<br>` : ''}
+              ${crime.city ? `City: ${crime.city}` : ''}
             `);
           });
           
           // Create a simple heat map effect using a custom layer
-          const heatmapPoints = CRIME_DATA.map(crime => {
+          const heatmapPoints = crimeData.map(crime => {
             const intensity = crime.severity === 'high' ? 1 : (crime.severity === 'medium' ? 0.6 : 0.3);
             return { lat: crime.lat, lng: crime.lng, intensity };
           });
           
           // Create a canvas overlay for the heatmap effect
           const createHeatLayer = () => {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Use a custom overlay to draw heat effect
             const overlay = L.layerGroup();
             
             heatmapPoints.forEach(point => {
@@ -118,6 +119,14 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
           // Add heat layer
           heatLayer.current = createHeatLayer();
           heatLayer.current.addTo(map.current);
+          
+          // Create bounds that include all crime points
+          const bounds = L.latLngBounds(
+            crimeData.map(crime => [crime.lat, crime.lng])
+          );
+          
+          // Fit the map to the bounds with some padding
+          map.current.fitBounds(bounds, { padding: [50, 50] });
         }
         
         setLoading(false);
@@ -137,7 +146,7 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
         map.current = null;
       }
     };
-  }, [defaultLocation.lat, defaultLocation.lng]);
+  }, [crimeData, defaultLocation.lat, defaultLocation.lng]);
 
   return (
     <Card className="w-full">
@@ -174,6 +183,13 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
               </span>
             </div>
             <div ref={mapContainer} style={{ height: '500px' }} className="rounded-md border map-container" />
+            
+            {!loading && crimeData.length > 0 && (
+              <div className="mt-4 text-sm text-muted-foreground">
+                Showing {crimeData.length} crime incidents 
+                {crimeData[0].city && ` in ${crimeData[0].city}`}.
+              </div>
+            )}
           </div>
         </>
       </CardContent>
