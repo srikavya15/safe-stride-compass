@@ -88,8 +88,10 @@ const RouteDecider: React.FC = () => {
         setAlternativeRoutes(routeResult.alternativeRoutes);
       }
       
-      // Initialize map
-      initializeMap(startLocationObj, endLocationObj, routeResult);
+      // Initialize map with a slight delay to ensure the container is ready
+      setTimeout(() => {
+        initializeMap(startLocationObj, endLocationObj, routeResult);
+      }, 100);
     } catch (error) {
       console.error('Error finding route:', error);
       setError('Failed to calculate safe route. Please try again.');
@@ -102,8 +104,15 @@ const RouteDecider: React.FC = () => {
     if (!mapContainer.current) return;
     
     try {
-      // Dynamically import Leaflet to avoid SSR issues
-      const L = await import('leaflet');
+      // Import Leaflet with a direct reference rather than dynamic import
+      // which might be causing issues
+      const L = (window as any).L;
+      
+      if (!L) {
+        console.error('Leaflet is not available');
+        setError('Could not load map library. Please refresh the page and try again.');
+        return;
+      }
       
       // Clear previous map instance if it exists
       if (map.current) {
@@ -126,14 +135,14 @@ const RouteDecider: React.FC = () => {
       
       // Add markers for start and end points
       const startIcon = L.divIcon({
-        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-safe text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
+        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-green-500 text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
         className: '',
         iconSize: [24, 24],
         iconAnchor: [12, 24]
       });
       
       const endIcon = L.divIcon({
-        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-danger text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
+        html: `<div class="flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></div>`,
         className: '',
         iconSize: [24, 24],
         iconAnchor: [12, 24]
@@ -180,45 +189,23 @@ const RouteDecider: React.FC = () => {
     }
   };
 
-  const selectRoute = async (route: RouteOption) => {
-    if (!map.current) return;
-    
-    setSelectedRoute(route);
-    
-    try {
-      const L = await import('leaflet');
-      
-      // Remove previous route layers except markers
-      routeLayers.current.forEach(item => {
-        if (map.current) {
-          map.current.removeLayer(item.layer);
-        }
-      });
-      routeLayers.current = [];
-      
-      // Add the new selected route
-      const routeColor = route === recommendedRoute ? '#3B82F6' : '#f59e0b';
-      const routeLine = L.polyline(
-        route.route.map(point => [point.lat, point.lng]),
-        { 
-          color: routeColor, 
-          weight: 5, 
-          opacity: 0.8 
-        }
-      ).addTo(map.current);
-      
-      routeLayers.current.push({
-        id: 'selected-route',
-        layer: routeLine
-      });
-    } catch (error) {
-      console.error('Error updating route on map:', error);
-    }
-  };
-  
-  // Clean up the map when component unmounts
+  // Add useEffect to load Leaflet library directly in the component
   useEffect(() => {
+    // Add Leaflet script to the page if it doesn't exist
+    if (!(window as any).L) {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+      script.crossOrigin = '';
+      script.async = true;
+      script.onload = () => {
+        console.log('Leaflet loaded successfully');
+      };
+      document.head.appendChild(script);
+    }
+    
     return () => {
+      // Clean up the map when component unmounts
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -246,6 +233,43 @@ const RouteDecider: React.FC = () => {
         icon: <X className="h-4 w-4 mr-1" />,
         text: 'Avoid'
       };
+    }
+  };
+
+  // Add function to handle selecting routes
+  const selectRoute = async (route: RouteOption) => {
+    if (!map.current || !(window as any).L) return;
+    
+    setSelectedRoute(route);
+    
+    try {
+      const L = (window as any).L;
+      
+      // Remove previous route layers except markers
+      routeLayers.current.forEach(item => {
+        if (map.current) {
+          map.current.removeLayer(item.layer);
+        }
+      });
+      routeLayers.current = [];
+      
+      // Add the new selected route
+      const routeColor = route === recommendedRoute ? '#3B82F6' : '#f59e0b';
+      const routeLine = L.polyline(
+        route.route.map(point => [point.lat, point.lng]),
+        { 
+          color: routeColor, 
+          weight: 5, 
+          opacity: 0.8 
+        }
+      ).addTo(map.current);
+      
+      routeLayers.current.push({
+        id: 'selected-route',
+        layer: routeLine
+      });
+    } catch (error) {
+      console.error('Error updating route on map:', error);
     }
   };
 
