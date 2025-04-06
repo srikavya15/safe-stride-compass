@@ -1,7 +1,4 @@
 
-// This file would contain functions to interact with a real crime API
-// For now, we're using mock data for demonstration purposes
-
 import { toast } from 'sonner';
 
 // Types
@@ -21,8 +18,8 @@ interface Location {
   lng: number;
 }
 
-// Mock data to simulate API responses
-const MOCK_CRIMES: CrimeData[] = [
+// Local crime data
+const LOCAL_CRIMES: CrimeData[] = [
   // New York
   { id: 1, lat: 40.7128, lng: -74.006, type: 'Theft', severity: 'medium', date: '2025-04-02', description: 'Personal items stolen from vehicle', address: '123 Broadway, New York' },
   { id: 2, lat: 40.7138, lng: -74.008, type: 'Assault', severity: 'high', date: '2025-04-01', description: 'Physical altercation between individuals', address: '456 5th Ave, New York' },
@@ -46,17 +43,14 @@ const MOCK_CRIMES: CrimeData[] = [
 
 // Function to get crime data for a specific location
 export const getCrimeData = async (apiKey: string, location: Location): Promise<CrimeData[]> => {
-  // This would be an actual API call in a real application
-  // For demonstration, we're returning mock data
-  console.log(`Fetching crime data with API key: ${apiKey} for location:`, location);
+  console.log(`Using local crime data for location:`, location);
   
   // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 500));
   
-  // For demo purposes, filter based on proximity to the requested location
-  // In a real app, this would be handled by the API
-  const filteredCrimes = MOCK_CRIMES.filter(crime => {
-    // Simple distance calculation (not accurate for long distances but works for demo)
+  // Filter based on proximity to the requested location
+  const filteredCrimes = LOCAL_CRIMES.filter(crime => {
+    // Simple distance calculation
     const distance = Math.sqrt(
       Math.pow(crime.lat - location.lat, 2) + 
       Math.pow(crime.lng - location.lng, 2)
@@ -78,23 +72,23 @@ export const getCrimeData = async (apiKey: string, location: Location): Promise<
 
 // Function to search for crimes by location name
 export const searchCrimesByLocation = async (apiKey: string, locationName: string): Promise<CrimeData[]> => {
-  console.log(`Searching crimes for location: ${locationName} with API key: ${apiKey}`);
+  console.log(`Searching crimes for location: ${locationName} using local data`);
   
   // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 500));
   
   // For demo purposes, do a simple match on the location name in the address
   const lowercaseQuery = locationName.toLowerCase();
   
-  // Filter the mock data based on the location name
-  const filteredCrimes = MOCK_CRIMES.filter(crime => 
+  // Filter the data based on the location name
+  const filteredCrimes = LOCAL_CRIMES.filter(crime => 
     crime.address?.toLowerCase().includes(lowercaseQuery)
   );
   
   if (filteredCrimes.length === 0) {
     toast(`No crime data found for "${locationName}". Showing sample data instead.`);
     // Return a subset of data as a fallback
-    return MOCK_CRIMES.slice(0, 5);
+    return LOCAL_CRIMES.slice(0, 5);
   }
   
   return filteredCrimes;
@@ -110,13 +104,10 @@ export const calculateSafeRoute = async (
   safetyScore: number,
   alternativeRoutes?: { route: Location[], safetyScore: number }[]
 }> => {
-  console.log(`Calculating safe route with API key: ${apiKey} from:`, start, 'to:', end);
+  console.log(`Calculating safe route using local data from:`, start, 'to:', end);
   
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // In a real app, this would query a routing API that takes crime data into account
-  // For now, we'll create a simulated route with some intermediary points
+  // Simulate processing delay
+  await new Promise(resolve => setTimeout(resolve, 1000));
   
   // Create a straight-line route with some points in between
   const numPoints = 8;
@@ -160,7 +151,7 @@ export const calculateSafeRoute = async (
 
 // Helper function to determine which city a location is in
 const determineCity = (location: Location): 'new-york' | 'los-angeles' | 'chicago' => {
-  // Very simple proximity check - in a real app we would use a geocoding service
+  // Very simple proximity check
   const distances = {
     'new-york': Math.sqrt(Math.pow(location.lat - 40.7128, 2) + Math.pow(location.lng - (-74.006), 2)),
     'los-angeles': Math.sqrt(Math.pow(location.lat - 34.0522, 2) + Math.pow(location.lng - (-118.2437), 2)),
@@ -187,12 +178,12 @@ const determineCity = (location: Location): 'new-york' | 'los-angeles' | 'chicag
 const getCityData = (city: 'new-york' | 'los-angeles' | 'chicago'): CrimeData[] => {
   switch (city) {
     case 'new-york':
-      return MOCK_CRIMES.slice(0, 8);
+      return LOCAL_CRIMES.slice(0, 8);
     case 'los-angeles':
-      return MOCK_CRIMES.slice(8, 11);
+      return LOCAL_CRIMES.slice(8, 11);
     case 'chicago':
-      return MOCK_CRIMES.slice(11, 14);
+      return LOCAL_CRIMES.slice(11, 14);
     default:
-      return MOCK_CRIMES.slice(0, 5);
+      return LOCAL_CRIMES.slice(0, 5);
   }
 };

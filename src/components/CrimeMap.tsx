@@ -1,18 +1,25 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import ApiKeyInput from './ApiKeyInput';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { getCrimeData } from '@/lib/crimeApi';
+import 'leaflet/dist/leaflet.css';
 
-// Mock data for initial development
-const MOCK_CRIME_DATA = [
+// Mock data for development
+const CRIME_DATA = [
   { id: 1, lat: 40.7128, lng: -74.006, type: 'Theft', severity: 'medium' },
   { id: 2, lat: 40.7138, lng: -74.008, type: 'Assault', severity: 'high' },
   { id: 3, lat: 40.7118, lng: -74.004, type: 'Robbery', severity: 'high' },
   { id: 4, lat: 40.7148, lng: -74.003, type: 'Vandalism', severity: 'low' },
   { id: 5, lat: 40.7158, lng: -74.009, type: 'Theft', severity: 'medium' },
+  // Additional data points to create a better heat map
+  { id: 6, lat: 40.7168, lng: -74.007, type: 'Harassment', severity: 'low' },
+  { id: 7, lat: 40.7178, lng: -74.005, type: 'Burglary', severity: 'high' },
+  { id: 8, lat: 40.7115, lng: -74.0065, type: 'Theft', severity: 'medium' },
+  { id: 9, lat: 40.7135, lng: -74.0075, type: 'Assault', severity: 'high' },
+  { id: 10, lat: 40.7125, lng: -74.0025, type: 'Robbery', severity: 'high' },
+  { id: 11, lat: 40.7145, lng: -74.0035, type: 'Vandalism', severity: 'low' },
+  { id: 12, lat: 40.7155, lng: -74.0095, type: 'Theft', severity: 'medium' },
 ];
 
 interface CrimeMapProps {
@@ -22,135 +29,115 @@ interface CrimeMapProps {
 const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<any>(null);
-  const [mapboxApiKey, setMapboxApiKey] = useState<string | null>(null);
-  const [crimeApiKey, setCrimeApiKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const heatLayer = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [crimeData, setCrimeData] = useState(MOCK_CRIME_DATA);
   
   // Default to New York City if no location provided
   const defaultLocation = location || { lat: 40.7128, lng: -74.006 };
 
   useEffect(() => {
-    if (!mapboxApiKey || !mapContainer.current) return;
+    if (!mapContainer.current) return;
     
-    // Load Mapbox script dynamically
-    const script = document.createElement('script');
-    script.src = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js';
-    script.async = true;
-    
-    script.onload = () => {
-      const mapboxgl = (window as any).mapboxgl;
-      
-      if (mapboxgl && !map.current) {
-        mapboxgl.accessToken = mapboxApiKey;
+    const initializeMap = async () => {
+      try {
+        setLoading(true);
         
-        map.current = new mapboxgl.Map({
-          container: mapContainer.current!,
-          style: 'mapbox://styles/mapbox/streets-v12',
-          center: [defaultLocation.lng, defaultLocation.lat],
-          zoom: 12
-        });
+        // Dynamically import Leaflet to avoid SSR issues
+        const L = await import('leaflet');
         
-        map.current.on('load', () => {
-          // Add heat map layer when data is available
-          if (map.current.getSource('crimes')) {
-            map.current.removeSource('crimes');
-          }
+        // Initialize map if it doesn't exist
+        if (!map.current) {
+          map.current = L.map(mapContainer.current).setView(
+            [defaultLocation.lat, defaultLocation.lng], 
+            14
+          );
           
-          map.current.addSource('crimes', {
-            type: 'geojson',
-            data: {
-              type: 'FeatureCollection',
-              features: crimeData.map(crime => ({
-                type: 'Feature',
-                properties: {
-                  severity: crime.severity,
-                  type: crime.type
-                },
-                geometry: {
-                  type: 'Point',
-                  coordinates: [crime.lng, crime.lat]
-                }
-              }))
-            }
+          // Add OpenStreetMap tiles
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }).addTo(map.current);
+          
+          // Add zoom control
+          L.control.zoom({ position: 'topright' }).addTo(map.current);
+          
+          // Create markers for each crime
+          CRIME_DATA.forEach(crime => {
+            const severityColors = {
+              low: '#10b981', // green
+              medium: '#f59e0b', // amber
+              high: '#ef4444' // red
+            };
+            
+            const color = severityColors[crime.severity as keyof typeof severityColors];
+            
+            const marker = L.circleMarker([crime.lat, crime.lng], {
+              radius: crime.severity === 'high' ? 10 : (crime.severity === 'medium' ? 8 : 6),
+              fillColor: color,
+              color: '#fff',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.8
+            }).addTo(map.current);
+            
+            // Add a popup with crime details
+            marker.bindPopup(`
+              <strong>${crime.type}</strong><br>
+              Severity: ${crime.severity}<br>
+            `);
           });
           
-          map.current.addLayer({
-            id: 'crime-heat',
-            type: 'heatmap',
-            source: 'crimes',
-            paint: {
-              'heatmap-weight': [
-                'interpolate',
-                ['linear'],
-                ['get', 'severity'],
-                'low', 0.3,
-                'medium', 0.6,
-                'high', 1
-              ],
-              'heatmap-intensity': 1.5,
-              'heatmap-color': [
-                'interpolate',
-                ['linear'],
-                ['heatmap-density'],
-                0, 'rgba(16, 185, 129, 0)',
-                0.2, 'rgb(16, 185, 129)',
-                0.4, 'rgb(245, 158, 11)',
-                0.8, 'rgb(239, 68, 68)'
-              ],
-              'heatmap-radius': 25,
-              'heatmap-opacity': 0.8
-            }
+          // Create a simple heat map effect using a custom layer
+          const heatmapPoints = CRIME_DATA.map(crime => {
+            const intensity = crime.severity === 'high' ? 1 : (crime.severity === 'medium' ? 0.6 : 0.3);
+            return { lat: crime.lat, lng: crime.lng, intensity };
           });
-        });
+          
+          // Create a canvas overlay for the heatmap effect
+          const createHeatLayer = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Use a custom overlay to draw heat effect
+            const overlay = L.layerGroup();
+            
+            heatmapPoints.forEach(point => {
+              const circleMarker = L.circle([point.lat, point.lng], {
+                radius: 100 * point.intensity,
+                fillColor: point.intensity > 0.8 ? '#ef4444' : (point.intensity > 0.5 ? '#f59e0b' : '#10b981'),
+                fillOpacity: 0.3,
+                stroke: false,
+              });
+              
+              overlay.addLayer(circleMarker);
+            });
+            
+            return overlay;
+          };
+          
+          // Add heat layer
+          heatLayer.current = createHeatLayer();
+          heatLayer.current.addTo(map.current);
+        }
         
-        // Add navigation controls
-        map.current.addControl(new mapboxgl.NavigationControl());
+        setLoading(false);
+      } catch (err) {
+        console.error('Error initializing map:', err);
+        setError('Failed to load map. Please refresh the page.');
+        setLoading(false);
       }
     };
     
-    document.head.appendChild(script);
+    initializeMap();
     
-    // Add stylesheet
-    const link = document.createElement('link');
-    link.href = 'https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
-    
+    // Cleanup
     return () => {
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
-      // Remove script and stylesheet
-      document.head.removeChild(script);
-      document.head.removeChild(link);
     };
-  }, [mapboxApiKey, defaultLocation.lat, defaultLocation.lng]);
-  
-  useEffect(() => {
-    if (crimeApiKey) {
-      // Fetch crime data when API key is available
-      setLoading(true);
-      setError(null);
-      
-      // For now, we're using mock data
-      // In a real app, we would call the API with the key
-      setTimeout(() => {
-        getCrimeData(crimeApiKey, defaultLocation)
-          .then(data => {
-            setCrimeData(data);
-            setLoading(false);
-          })
-          .catch(err => {
-            console.error('Failed to fetch crime data', err);
-            setError('Failed to fetch crime data. Please check your API key.');
-            setLoading(false);
-          });
-      }, 1000);
-    }
-  }, [crimeApiKey, defaultLocation]);
+  }, [defaultLocation.lat, defaultLocation.lng]);
 
   return (
     <Card className="w-full">
@@ -161,40 +148,34 @@ const CrimeMap: React.FC<CrimeMapProps> = ({ location }) => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {!mapboxApiKey ? (
-          <ApiKeyInput onApiKeySubmit={setMapboxApiKey} type="mapbox" />
-        ) : !crimeApiKey ? (
-          <ApiKeyInput onApiKeySubmit={setCrimeApiKey} type="crime" />
-        ) : (
-          <>
-            {error && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="relative">
-              {loading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                  <div className="animate-pulse text-primary font-semibold">Loading crime data...</div>
-                </div>
-              )}
-              <div className="heatmap-legend flex items-center justify-between mb-2 text-sm">
-                <span className="flex items-center">
-                  <span className="inline-block w-3 h-3 rounded-full bg-safe mr-1"></span> Low
-                </span>
-                <span className="flex items-center">
-                  <span className="inline-block w-3 h-3 rounded-full bg-caution mr-1"></span> Medium
-                </span>
-                <span className="flex items-center">
-                  <span className="inline-block w-3 h-3 rounded-full bg-danger mr-1"></span> High
-                </span>
+        <>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <div className="relative">
+            {loading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                <div className="animate-pulse text-primary font-semibold">Loading map...</div>
               </div>
-              <div ref={mapContainer} style={{ height: '500px' }} className="rounded-md border map-container" />
+            )}
+            <div className="heatmap-legend flex items-center justify-between mb-2 text-sm">
+              <span className="flex items-center">
+                <span className="inline-block w-3 h-3 rounded-full bg-[#10b981] mr-1"></span> Low
+              </span>
+              <span className="flex items-center">
+                <span className="inline-block w-3 h-3 rounded-full bg-[#f59e0b] mr-1"></span> Medium
+              </span>
+              <span className="flex items-center">
+                <span className="inline-block w-3 h-3 rounded-full bg-[#ef4444] mr-1"></span> High
+              </span>
             </div>
-          </>
-        )}
+            <div ref={mapContainer} style={{ height: '500px' }} className="rounded-md border map-container" />
+          </div>
+        </>
       </CardContent>
     </Card>
   );
